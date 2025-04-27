@@ -1,5 +1,3 @@
-# --- START OF FILE main1.py ---
-
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, font as tkFont, simpledialog
 import ttkbootstrap as tb
@@ -62,7 +60,9 @@ class GitHubHandler:
         return self.authenticated_token
 
     def is_authenticated(self):
+         # --- START CHANGE: Added self.user check ---
          return self.g is not None and self.user is not None and self.authenticated_token is not None
+         # --- END CHANGE ---
 
     def get_repos(self):
         if not self.is_authenticated():
@@ -88,7 +88,6 @@ class GitHubHandler:
             print(f"Info: Path '{path}' in repo '{repo_name}' not found or repo root is empty (Specific UnknownObjectException 404).")
             return None # Return None, NO messagebox
         except GithubException as e:
-            # --- START CHANGE ---
             # Check specifically for 404 status within the general GithubException
             if e.status == 404:
                 # Treat *any* 404 GithubException as "Not Found" or "Empty"
@@ -98,7 +97,6 @@ class GitHubHandler:
                 # For all *other* GithubExceptions (401, 403, 500, etc.), show the error
                 messagebox.showerror("Lỗi GitHub", f"Không thể lấy nội dung repo '{repo_name}' tại path '{path}'.\nLỗi: {e.status} - {e.data.get('message', 'Unknown Error')}")
                 return None # Return None after showing the error for non-404 issues
-            # --- END CHANGE ---
         except Exception as e:
             # Show errors for unexpected issues (network, etc.)
             messagebox.showerror("Lỗi không xác định", f"Đã xảy ra lỗi khi lấy nội dung repo:\n{e}")
@@ -147,7 +145,7 @@ class GitHubHandler:
                 print(f"Info: File '{target_path}' not found (UnknownObjectException). Will create.")
                 pass # File doesn't exist, proceed to create
             except GithubException as e:
-                # --- START CHANGE: Handle 404 within GithubException during check ---
+                # Handle 404 within GithubException during check
                 if e.status == 404:
                     # Treat general 404 during check as "file doesn't exist"
                     print(f"Info: File '{target_path}' not found (GithubException 404). Will create.")
@@ -156,7 +154,6 @@ class GitHubHandler:
                     # For other Github errors during the check (e.g., 403 Forbidden), re-raise
                     print(f"Error: GitHub check failed for '{target_path}' with status {e.status}. Re-raising.")
                     raise e # Re-raise to be caught by the outer exception handler
-                # --- END CHANGE ---
             except Exception as e:
                  # Handle other unexpected errors during the check
                  print(f"Error: Unexpected error during existence check for '{target_path}': {e}. Re-raising.")
@@ -222,17 +219,12 @@ class GitHubManagerApp:
         self.settings = self.load_settings()
         self.github_handler = GitHubHandler(self.get_token())
 
-        # --- START CHANGE: Determine Initial Local Path ---
+        # Determine Initial Local Path
         initial_local_path = None # Default to "My Computer" view signal (None)
         desktop_path_found = False
         home_path = os.path.expanduser("~") # Get home path for final fallback
 
-        # Try to get Desktop path first using the helper method
         try:
-            # We need to potentially call get_quick_access_paths here,
-            # which might feel slightly out of order, but it's necessary
-            # to determine the desktop path reliably before setting current_local_path.
-            # Ensure get_quick_access_paths doesn't itself rely on uninitialized app state.
             quick_paths = self.get_quick_access_paths() # Call the method to get paths
             desktop_path = quick_paths.get("Màn hình nền") # Key from get_quick_access_paths
 
@@ -241,18 +233,11 @@ class GitHubManagerApp:
                 desktop_path_found = True
                 print(f"Defaulting initial local view to Desktop: {initial_local_path}")
             else:
-                # Log if Desktop was not found or invalid, but initial_local_path remains None
                 print(f"Desktop path ('Màn hình nền') not found or invalid. Will use 'My Computer' view.")
         except Exception as e:
-            # Log error during path finding, initial_local_path remains None
             print(f"Error determining Desktop path during initialization: {e}. Will use 'My Computer' view.")
 
-        # If Desktop failed, initial_local_path is still None (signal for My Computer)
-        # The populate_local_tree method will handle the None value later.
-        # If populate_local_tree fails with None, it should fall back to home_path.
-
-        self.current_local_path = initial_local_path # Set the chosen initial path (Desktop path or None)
-        # --- END CHANGE ---
+        self.current_local_path = initial_local_path
 
         # Continue with other initializations
         self.clipboard = None
@@ -273,12 +258,7 @@ class GitHubManagerApp:
         self.apply_settings(force_refresh=True) # Apply theme, font size from settings
 
         # --- Populate Initial Views ---
-        # Populate the local tree using the determined initial path (Desktop or None)
-        # The populate_local_tree function itself now handles the 'None' case
-        # to display "My Computer" or fall back to Home if that fails.
         self.populate_local_tree(self.current_local_path)
-
-        # Populate the GitHub tree (starts with repo list or auth message)
         self.populate_github_tree()
 
         # Start the queue processor for background tasks
@@ -385,7 +365,7 @@ class GitHubManagerApp:
                         self.api_token_entry.insert(0, display_value)
                     else:
                         # If focused and masked, leave it as is unless it was empty
-                        if not current_content and display_value:
+                        if not self.api_token_entry.get() and display_value:
                             self.api_token_entry.delete(0, tk.END)
                             self.api_token_entry.insert(0, display_value)
 
@@ -406,16 +386,12 @@ class GitHubManagerApp:
         needs_reinit = False
         if not hasattr(self, 'github_handler') or self.github_handler is None:
             needs_reinit = bool(token_from_settings)
-            # if needs_reinit: print("Debug: No GitHub handler instance, initializing with settings token.")
         elif not self.github_handler.is_authenticated() and token_from_settings:
             needs_reinit = True
-            # print("Debug: Handler not authenticated, but token found in settings. Re-initializing.")
         elif self.github_handler.is_authenticated() and self.github_handler.get_active_token() != token_from_settings:
             needs_reinit = True
-            # print("Debug: Token mismatch (handler vs settings). Re-initializing.")
         elif self.github_handler.is_authenticated() and not token_from_settings:
              needs_reinit = True
-             # print("Debug: Token removed from settings. Re-initializing (will de-authenticate).")
 
         if needs_reinit:
             print("Applying settings: Re-initializing GitHub Handler...")
@@ -888,12 +864,10 @@ class GitHubManagerApp:
     def navigate_local_from_entry(self, event=None):
         path_input = self.local_path_var.get().strip()
 
-        # --- START CHANGE ---
         # Check if user typed "Máy tính" (case-insensitive)
         if path_input.lower() == "máy tính":
             self.populate_local_tree(None) # Show "My Computer" view
             return
-        # --- END CHANGE ---
 
         # Existing logic for directory paths
         if os.path.isdir(path_input):
@@ -1021,10 +995,17 @@ class GitHubManagerApp:
                     if data and 'refresh_view' in data:
                         if data['refresh_view'] == 'local':
                             refresh_path = data.get('path', self.current_local_path)
-                            # Check if the finished task operated on the currently viewed directory
-                            if os.path.normpath(refresh_path) == os.path.normpath(self.current_local_path):
-                                print(f"Refreshing local view: {self.current_local_path}")
+                            # Check if the finished task operated on the currently viewed directory or its parent
+                            if self.current_local_path is not None and refresh_path is not None and \
+                                (os.path.normpath(self.current_local_path) == os.path.normpath(refresh_path) or
+                                 os.path.normpath(self.current_local_path) == os.path.normpath(os.path.dirname(refresh_path))):
+                                print(f"Refreshing local view due to task completion: {self.current_local_path}")
                                 self.populate_local_tree(self.current_local_path)
+                            elif self.current_local_path is None and refresh_path is not None:
+                                # If we are in "My Computer" view, refresh if the target was a drive root
+                                if self.is_drive_root(refresh_path):
+                                     print("Refreshing 'My Computer' view due to task completion on drive.")
+                                     self.populate_local_tree(None)
                         elif data['refresh_view'] == 'github':
                             # Check if the finished task operated on the currently viewed repo/path
                             task_repo = data.get('repo', None) # Task might provide context
@@ -1061,7 +1042,7 @@ class GitHubManagerApp:
         show_icons = self.settings.get("show_icons", True)
         home_path = os.path.expanduser("~") # Needed for fallback
 
-        # --- START CHANGE: Handle "My Computer" View ---
+        # --- Handle "My Computer" View ---
         if path is None: # Signal to show drives list
             self.current_local_path = None # Indicate we are in "My Computer" view
             self.local_path_var.set("Máy tính") # Update path entry display
@@ -1127,9 +1108,9 @@ class GitHubManagerApp:
         # If path is a valid directory, proceed with listing contents...
         self.current_local_path = os.path.abspath(path)
         self.local_path_var.set(self.current_local_path)
+        self.update_status(f"Đang xem: {self.current_local_path}")
 
         items_data = []
-        # ... (rest of the os.listdir and item processing logic remains exactly the same as before) ...
         try:
             for item in os.listdir(path):
                 full_path = os.path.join(path, item)
@@ -1156,7 +1137,6 @@ class GitHubManagerApp:
                          item_type = "Khác"
                          if show_icons: icon_prefix = FILE_ICON + " "
 
-                    # ... (getting stats, formatting size/date - no changes needed here) ...
                     try:
                         stat_info = os.lstat(full_path) if is_link else os.stat(full_path)
                         size_bytes = stat_info.st_size
@@ -1167,7 +1147,6 @@ class GitHubManagerApp:
 
                     if is_file and not is_link:
                         if size_bytes < 1024: item_size_str = f"{size_bytes} B"
-                        # ... (rest of size formatting) ...
                         elif size_bytes < 1024**2: item_size_str = f"{size_bytes/1024:.1f} KB"
                         elif size_bytes < 1024**3: item_size_str = f"{size_bytes/1024**2:.1f} MB"
                         else: item_size_str = f"{size_bytes/1024**3:.1f} GB"
@@ -1198,8 +1177,20 @@ class GitHubManagerApp:
                     print(f"Skipping item due to access error: {full_path} - {e}")
                     continue
 
-            items_data.sort(key=lambda x: (not x['is_drive'], not x['is_dir'], x['sort_name']))
+            # Sort: Drives first, then Dirs, then Files, then Links/Other, then alphabetically
+            items_data.sort(key=lambda x: (x['type'] != "Ổ đĩa", x['type'] != "Thư mục", x['type'] != "Tập tin", x['type'] != "Liên kết", x['sort_name']))
 
+
+            # Add ".." entry if not at a drive root or file system root
+            if not self.is_drive_root(path) and os.path.dirname(path) != path:
+                 parent_path = os.path.dirname(path)
+                 self.local_tree.insert("", tk.END,
+                                        text="..",
+                                        values=("Parent Directory", "", ""),
+                                        iid=parent_path) # Use parent path as iid for '..'
+
+
+            # Add sorted items
             for item_data in items_data:
                  self.local_tree.insert("", tk.END,
                                        text=item_data['display_text'],
@@ -1207,11 +1198,9 @@ class GitHubManagerApp:
                                        iid=item_data['full_path'])
 
         except FileNotFoundError:
-            # ... (Error handling remains the same) ...
             messagebox.showerror("Lỗi", f"Đường dẫn không tồn tại: {path}", parent=self.root)
             self.populate_local_tree(home_path) # Go home on error
         except PermissionError:
-            # ... (Error handling remains the same) ...
             messagebox.showerror("Lỗi", f"Không có quyền truy cập vào: {path}", parent=self.root)
             parent = os.path.dirname(path)
             if parent != path:
@@ -1228,18 +1217,22 @@ class GitHubManagerApp:
         item_id = self.local_tree.focus() # Get the iid (full path)
         if not item_id: return
 
+        # Handle '..' navigation
+        if self.local_tree.item(item_id, 'text') == "..":
+            self.go_up_local() # Use the existing go_up function
+            return
+
+        # Existing logic for files/dirs/links
         if os.path.isdir(item_id):
-            # Check if it's a link to a directory before navigating
             if os.path.islink(item_id):
                  target_path = os.path.realpath(item_id)
                  if os.path.isdir(target_path):
                      self.populate_local_tree(target_path)
                  else:
                      messagebox.showinfo("Liên kết", f"Liên kết '{os.path.basename(item_id)}' trỏ đến:\n{target_path}\n(Không phải thư mục hợp lệ)")
-            else: # It's a regular directory
+            else: # It's a regular directory or a drive root (which is also a dir)
                 self.populate_local_tree(item_id)
         elif os.path.isfile(item_id):
-            # Try to open the file
             try:
                 print(f"Opening file: {item_id}")
                 if platform.system() == "Windows":
@@ -1248,11 +1241,11 @@ class GitHubManagerApp:
                     subprocess.call(('open', item_id))
                 else: # Linux and other Unix-like
                     subprocess.call(('xdg-open', item_id))
-            except FileNotFoundError: # Handle case where xdg-open or open might not be found
+            except FileNotFoundError:
                  messagebox.showerror("Lỗi mở file", f"Không tìm thấy lệnh để mở file. Hãy thử cài đặt 'xdg-utils' (Linux) hoặc kiểm tra cấu hình hệ thống.")
             except Exception as e:
                 messagebox.showerror("Lỗi mở file", f"Không thể mở '{os.path.basename(item_id)}':\n{e}")
-        elif os.path.islink(item_id): # Handle double-clicking broken links or links to non-files/dirs
+        elif os.path.islink(item_id):
              target_path = os.path.realpath(item_id) # Tries to resolve
              if not os.path.exists(target_path):
                   messagebox.showwarning("Liên kết hỏng", f"Liên kết '{os.path.basename(item_id)}' trỏ đến một vị trí không tồn tại:\n{target_path}")
@@ -1261,7 +1254,16 @@ class GitHubManagerApp:
 
 
     def get_selected_local_items(self):
-        return self.local_tree.selection() # Returns tuple of iids (full paths)
+        # --- START CHANGE: Filter out '..' item ---
+        selected_ids = self.local_tree.selection()
+        valid_selections = []
+        for item_id in selected_ids:
+            # Check if the item exists and its text is not ".."
+            if self.local_tree.exists(item_id) and self.local_tree.item(item_id, 'text') != "..":
+                valid_selections.append(item_id)
+        return tuple(valid_selections)
+        # --- END CHANGE ---
+
 
     # --- Logic GitHub Explorer ---
     def populate_github_tree(self, repo_name=None, path=""):
@@ -1321,12 +1323,13 @@ class GitHubManagerApp:
             current_display_path = f"{repo_name}/{path}".strip('/') if path else repo_name
             self.github_path_label_var.set(f"GitHub: {current_display_path}")
 
-            # --- Add "Go Back" item --- (Logic remains the same)
+            # --- Add "Go Back" item ---
             parent_path = os.path.dirname(path).replace("\\", "/") if path else None
             if path: # If we are inside a directory within the repo
                 parent_display_name = os.path.basename(parent_path) if parent_path else repo_name
                 back_text = f".. (Lên '{parent_display_name}')"
-                back_iid = f"back_{repo_name}_{parent_path if parent_path is not None else ''}"
+                # IMPORTANT: Ensure back_iid does not contain '|' character if using that as separator later
+                back_iid = f"back_{repo_name}_{parent_path if parent_path is not None else ''}".replace('|','_') # Replace '|' just in case
                 back_values = ("", "", parent_path if parent_path is not None else "")
             else: # If we are at the root of the repo
                  back_text = ".. (Quay lại danh sách Repos)"
@@ -1339,30 +1342,21 @@ class GitHubManagerApp:
             contents = self.github_handler.get_repo_contents(repo_name, path)
 
             # --- Refined Handling of Contents ---
-            # Case 1: contents is None (Handler indicates 404 Not Found OR other error shown by handler)
             if contents is None:
-                 # Since the handler now only returns None for 404 without a messagebox,
-                 # we interpret None here as "Not Found" or "Empty Repo Root".
-                 if not path: # If path is empty, it's the repo root
+                 if not path:
                      display_text = "(Repository này rỗng)"
                  else:
                      display_text = f"(Đường dẫn '{path}' không tồn tại)"
                  self.github_tree.insert("", tk.END, text=display_text, iid="placeholder_not_found_or_empty")
-                 # No further processing needed
                  return
 
-            # Case 2: contents is an empty list [] (API explicitly returned empty list)
             elif isinstance(contents, list) and not contents:
                  self.github_tree.insert("", tk.END, text="(Thư mục rỗng)", iid="placeholder_empty_dir")
-                 # No further processing needed
                  return
 
-            # Case 3: contents is a non-empty list (Directory has content)
             elif isinstance(contents, list):
-                # Sort contents: directories first, then files, alphabetically
                 contents.sort(key=lambda c: (c.type != 'dir', c.name.lower()))
 
-                # Insert items (existing logic)
                 for item in contents:
                     item_type = "Thư mục" if item.type == "dir" else "Tập tin"
                     icon_prefix = ""
@@ -1378,15 +1372,17 @@ class GitHubManagerApp:
                         else: item_size_str = f"{size_bytes/1024**3:.1f} GB"
 
                     display_text = f"{icon_prefix}{item.name}"
-                    safe_path = item.path.replace('_', '__')
-                    item_iid = f"gh_{item.type}_{repo_name}|{safe_path}|{item.sha}"
+                    # Use '|' as a safer separator for the iid components
+                    # Replace any '|' in repo_name or path to avoid breaking the split later
+                    safe_repo_name = repo_name.replace('|','_')
+                    safe_path = item.path.replace('|','_')
+                    safe_sha = item.sha.replace('|', '_') # SHA shouldn't have '|' but be safe
+                    item_iid = f"gh_{item.type}_{safe_repo_name}|{safe_path}|{safe_sha}"
 
                     self.github_tree.insert("", tk.END, text=display_text,
-                                           values=(item_type, item_size_str, item.path),
+                                           values=(item_type, item_size_str, item.path), # Keep original path in value
                                            iid=item_iid)
-                # End of loop for item insertion
 
-            # Case 4: Unexpected return type from get_repo_contents (Defensive check)
             else:
                 print(f"Warning: Unexpected content type received from get_repo_contents: {type(contents)}")
                 self.github_tree.insert("", tk.END, text="Lỗi không xác định khi tải nội dung.", iid="placeholder_load_content_fail")
@@ -1401,12 +1397,22 @@ class GitHubManagerApp:
             if item_id == "back_root":
                  self.populate_github_tree() # Go back to repo list
             else:
-                # Parse iid: back_repoName_parentPath
-                parts = item_id.split("_", 2)
-                if len(parts) == 3:
-                    repo_name = parts[1]
-                    parent_path = parts[2] # This is the path stored in the iid
-                    self.populate_github_tree(repo_name=repo_name, path=parent_path)
+                # Parse iid: back_repoName_parentPath (replace '|' with '_' during parse if needed)
+                # Since we replaced '|' in repo name with '_', the structure might be complex.
+                # A safer way is to retrieve the parent path from the item's values.
+                try:
+                    values = self.github_tree.item(item_id, 'values')
+                    parent_path = values[2] # Assuming parent path is stored in the 3rd value slot
+                    # Extract repo name from context as it's needed
+                    current_repo = self.current_github_context.get('repo')
+                    if current_repo:
+                         self.populate_github_tree(repo_name=current_repo, path=parent_path)
+                    else:
+                         print("Error: Cannot go back, current repo context is lost.")
+                         self.populate_github_tree() # Go to repo list as fallback
+                except (IndexError, tk.TclError):
+                    print(f"Error parsing 'back' item ID or values: {item_id}")
+                    self.populate_github_tree() # Fallback to repo list
             return
 
         # --- Handle Repo items (from list view) ---
@@ -1416,50 +1422,58 @@ class GitHubManagerApp:
 
         # --- Handle Directory items (from content view) ---
         elif item_id.startswith("gh_dir_"):
-            # Parse iid: gh_dir_repoName|safe_path|sha
-            try:
-                parts = item_id.split("|", 2) # Split by our chosen separator
-                meta_parts = parts[0].split("_", 2) # gh_dir_repoName
-                repo_name = meta_parts[2]
-                safe_path = parts[1].replace('__', '_') # Unescape path
-                # SHA (parts[2]) is not needed for navigation
-                self.populate_github_tree(repo_name=repo_name, path=safe_path)
-            except IndexError:
-                 print(f"Error parsing GitHub directory item ID: {item_id}")
+            info = self.get_info_from_gh_iid(item_id) # Use the parser
+            if info:
+                 self.populate_github_tree(repo_name=info['repo'], path=info['path'])
+            else:
+                 print(f"Error parsing GitHub directory item ID on double click: {item_id}")
 
         # --- Handle File items (optional: show info or attempt download?) ---
         elif item_id.startswith("gh_file_"):
-             # Maybe show file info or prompt download? Currently does nothing.
              print(f"Double-clicked GitHub file: {self.github_tree.item(item_id, 'text')}")
-             # Example: Ask to download
-             # item_info = self.get_info_from_gh_iid(item_id)
-             # if item_info:
-             #    if messagebox.askyesno("Tải File?", f"Bạn có muốn tải xuống file '{item_info['name']}'?"):
-             #        self.download_github_items(specific_items=[item_info]) # Need to adapt download func
+             # Future: Add action like download or view info
 
 
     def get_info_from_gh_iid(self, item_id):
-        """Helper to parse gh_ item IDs reliably."""
+        """Helper to parse gh_ item IDs reliably using '|' as separator."""
         if not item_id.startswith("gh_"): return None
         try:
-            # iid format: gh_{type}_{repoName}|{safe_path}|{sha}
+            # iid format: gh_{type}_{safe_repoName}|{safe_path}|{safe_sha}
             parts = item_id.split("|", 2)
+            if len(parts) != 3:
+                print(f"Error parsing ID '{item_id}': Incorrect number of '|' separators.")
+                return None
+
             meta_parts = parts[0].split("_", 2)
+            if len(meta_parts) != 3:
+                print(f"Error parsing ID '{item_id}': Cannot split meta part '{parts[0]}' correctly.")
+                return None
+
             item_type = meta_parts[1]
-            repo_name = meta_parts[2]
-            path = parts[1].replace('__', '_') # Unescape path
+            # Repo name, path, sha were made safe by replacing '|' with '_'.
+            # We don't need to reverse this for basic info retrieval,
+            # but the *actual* path from the 'values' column is better for display/use.
+            safe_repo_name = meta_parts[2] # Keep this one, it's likely correct
+            safe_path = parts[1] # Use the safe path from the iid for consistency? Or get from value?
             sha = parts[2]
-            name = ""
-            # Get display name (text), removing icon prefix if necessary
+
+            # --- Get actual path and display name from Treeview item ---
+            try:
+                item_values = self.github_tree.item(item_id, 'values')
+                actual_path = item_values[2] if len(item_values) > 2 else safe_path.replace('_', '|') # Fallback guess
+            except tk.TclError:
+                actual_path = safe_path.replace('_', '|') # Fallback if item vanished
+
             display_text = self.github_tree.item(item_id, 'text')
+            name = ""
             if self.settings.get("show_icons"):
                  if display_text.startswith(FOLDER_ICON + " ") or display_text.startswith(FILE_ICON + " "):
                      name = display_text[2:]
-                 else: name = display_text
+                 else: name = display_text # Handles '..' or items without icons
             else: name = display_text
 
             return {
-                 'id': item_id, 'repo': repo_name, 'path': path,
+                 'id': item_id, 'repo': safe_repo_name, 'path': actual_path, # Return the potentially corrected path
                  'type': item_type, 'sha': sha, 'name': name
             }
         except (IndexError, tk.TclError) as e:
@@ -1472,9 +1486,18 @@ class GitHubManagerApp:
         selected_ids = self.github_tree.selection()
         items_info = []
         for item_id in selected_ids:
+            # --- Filter out placeholder/back items before parsing ---
+            if item_id.startswith("placeholder_") or item_id.startswith("back_"):
+                continue
             info = self.get_info_from_gh_iid(item_id)
             if info:
                 items_info.append(info)
+            elif item_id.startswith("repo_"): # Handle repo items from list view
+                 repo_name = item_id.split("_", 1)[1]
+                 items_info.append({
+                     'id': item_id, 'repo': repo_name, 'path': '',
+                     'type': 'repo', 'sha': None, 'name': repo_name # Simulate structure
+                 })
         return items_info
 
     def refresh_github_tree_current_view(self):
@@ -1493,56 +1516,67 @@ class GitHubManagerApp:
         clicked_item_id = self.local_tree.identify_row(event.y) # Get iid under cursor
         context_menu = tk.Menu(self.root, tearoff=0)
 
-        if selection:
-            # Actions for selected items
-            context_menu.add_command(label=f"Copy ({len(selection)} mục)", command=self.copy_local_items)
-            context_menu.add_command(label=f"Xóa ({len(selection)} mục)", command=self.delete_selected_local_items)
-            # Rename only possible for single selection and not a drive root
-            if len(selection) == 1:
-                 item_id = selection[0]
-                 if not self.is_drive_root(item_id):
+        # Filter out '..' item from selection for actions
+        valid_selection = self.get_selected_local_items()
+
+        if valid_selection:
+            num_selected = len(valid_selection)
+            context_menu.add_command(label=f"Copy ({num_selected} mục)", command=self.copy_local_items)
+            context_menu.add_command(label=f"Xóa ({num_selected} mục)", command=self.delete_selected_local_items)
+            # Rename only possible for single selection and not a drive root or '..'
+            if num_selected == 1:
+                 item_id = valid_selection[0]
+                 if not self.is_drive_root(item_id) and self.local_tree.item(item_id,'text') != "..":
                      context_menu.add_command(label="Đổi tên", command=self.rename_local_item)
             context_menu.add_separator()
 
+        # Determine paste target directory
+        paste_target_dir = self.current_local_path # Default target
+        if clicked_item_id and self.local_tree.exists(clicked_item_id):
+            item_text = self.local_tree.item(clicked_item_id, 'text')
+            # Can paste *into* a directory, but not into '..' or files/drives
+            if os.path.isdir(clicked_item_id) and item_text != "..":
+                paste_target_dir = clicked_item_id
+            elif self.current_local_path is None: # In "My Computer" view
+                 paste_target_dir = None # Can't paste here
+
         # --- Paste from GitHub to Local ---
-        if self.clipboard and self.clipboard.get('type') == 'remote':
-             # Determine target directory:
-             # 1. If clicked on a directory, use that.
-             # 2. Otherwise, use the current directory.
-             target_dir = self.current_local_path # Default target
-             if clicked_item_id and self.local_tree.exists(clicked_item_id):
-                 if os.path.isdir(clicked_item_id):
-                     target_dir = clicked_item_id
-             # Add paste command
+        if self.clipboard and self.clipboard.get('type') == 'remote' and paste_target_dir is not None:
              num_items = len(self.clipboard['items'])
+             paste_dir_name = os.path.basename(paste_target_dir) if paste_target_dir else ""
              context_menu.add_command(
-                 label=f"Paste ({num_items} mục GitHub) vào '{os.path.basename(target_dir)}'",
-                 command=lambda t=target_dir: self.handle_paste_to_local(t)
+                 label=f"Paste ({num_items} mục GitHub) vào '{paste_dir_name}'",
+                 command=lambda t=paste_target_dir: self.handle_paste_to_local(t)
              )
              context_menu.add_separator()
 
+        # --- General Actions (only if not in 'My Computer' view) ---
+        if self.current_local_path is not None:
+             context_menu.add_command(label="Tạo thư mục mới", command=self.create_new_local_folder)
+             context_menu.add_command(label="Làm mới", command=lambda: self.populate_local_tree(self.current_local_path))
+        else:
+            # Actions for 'My Computer' view (maybe just Refresh?)
+             context_menu.add_command(label="Làm mới", command=lambda: self.populate_local_tree(None))
 
-        # --- General Actions ---
-        context_menu.add_command(label="Tạo thư mục mới", command=self.create_new_local_folder)
-        context_menu.add_command(label="Làm mới", command=lambda: self.populate_local_tree(self.current_local_path))
 
         # --- Show Menu ---
-        # Only show if there are any commands added
         if context_menu.index(tk.END) is not None:
             context_menu.tk_popup(event.x_root, event.y_root)
 
+
+    # --- START CHANGE: Updated show_github_context_menu ---
     def show_github_context_menu(self, event):
-        selection_info = self.get_selected_github_items_info() # List of dicts
+        selection = self.github_tree.selection() # Get raw selected IDs
         clicked_item_id = self.github_tree.identify_row(event.y) # Get iid under cursor
         context_menu = tk.Menu(self.root, tearoff=0)
 
-        # --- Paste from Local to GitHub ---
-        # Determine where paste would go based on click location
-        can_paste_here, paste_target_repo, paste_target_gh_path = self._determine_github_drop_target(event.widget, event.y)
+        # Determine paste target (repo/path)
+        can_paste_here, paste_target_repo, paste_target_gh_path = self._determine_github_drop_target(self.github_tree, event.y)
 
+        # --- Paste from Local to GitHub ---
         if self.clipboard and self.clipboard.get('type') == 'local' and can_paste_here:
             num_items = len(self.clipboard['items'])
-            paste_location_display = f"{paste_target_repo}/{paste_target_gh_path}".strip('/')
+            paste_location_display = f"{paste_target_repo}/{paste_target_gh_path}".strip('/') if paste_target_gh_path else paste_target_repo
             context_menu.add_command(
                 label=f"Paste ({num_items} mục Local) vào '{paste_location_display}'",
                 command=lambda repo=paste_target_repo, path=paste_target_gh_path: self.handle_paste_to_github(repo, path)
@@ -1550,14 +1584,28 @@ class GitHubManagerApp:
             context_menu.add_separator()
 
         # --- Actions for Selected GitHub Items ---
-        if selection_info:
-            num_selected = len(selection_info)
+        # Use get_selected_github_items_info which filters invalid items
+        selection_info = self.get_selected_github_items_info()
+        num_selected = len(selection_info)
+
+        if num_selected > 0:
             # Add Copy (Prepare Download) command
             context_menu.add_command(label=f"Copy ({num_selected} mục GitHub)", command=self.copy_github_items)
+
+            # --- Add Copy GitHub Link (only for single selection) ---
+            if num_selected == 1:
+                # Pass the single item's info (dict) or repo name (str)
+                item_data_for_link = selection_info[0] # Contains full info including type='repo' if applicable
+                context_menu.add_command(
+                    label="Copy Link GitHub",
+                    command=lambda data=item_data_for_link: self.copy_github_link_to_clipboard(data)
+                )
+
             # Add Delete command
             context_menu.add_command(label=f"Xóa ({num_selected} mục)", command=self.delete_selected_github_items)
-            # Add Download command
-            context_menu.add_command(label=f"Tải xuống ({num_selected} mục)", command=self.download_github_items)
+            # Add Download command (only if not selecting only repos)
+            if any(item['type'] != 'repo' for item in selection_info):
+                context_menu.add_command(label=f"Tải xuống ({num_selected} mục)", command=self.download_github_items)
 
             context_menu.add_separator()
 
@@ -1569,12 +1617,60 @@ class GitHubManagerApp:
         # --- Show Menu ---
         if context_menu.index(tk.END) is not None:
             context_menu.tk_popup(event.x_root, event.y_root)
+    # --- END CHANGE: Updated show_github_context_menu ---
 
+    # --- START CHANGE: Added copy_github_link_to_clipboard ---
+    def copy_github_link_to_clipboard(self, item_data):
+        """Copies the GitHub web URL for the selected item to the clipboard."""
+        if not self.github_handler or not self.github_handler.is_authenticated() or not self.github_handler.user:
+            self.update_status("Lỗi: Chưa xác thực GitHub để lấy link.")
+            messagebox.showerror("Lỗi", "Chưa xác thực GitHub.")
+            return
+
+        try:
+            user_login = self.github_handler.user.login
+            repo_name = item_data['repo']
+            item_type = item_data['type'] # 'file', 'dir', or 'repo'
+            item_path = item_data.get('path', '') # Path is empty for repo type
+            default_branch = "main" # Assuming 'main' as default branch for links
+            url = None
+
+            if not repo_name:
+                 raise ValueError("Tên repository không hợp lệ.")
+
+            if item_type == 'repo':
+                # URL for the repository root
+                url = f"https://github.com/{user_login}/{repo_name}"
+            elif item_type == 'dir':
+                # URL for a directory (tree view)
+                url = f"https://github.com/{user_login}/{repo_name}/tree/{default_branch}/{item_path}"
+            elif item_type == 'file':
+                # URL for a file (blob view)
+                url = f"https://github.com/{user_login}/{repo_name}/blob/{default_branch}/{item_path}"
+            else:
+                 self.update_status(f"Không thể tạo link cho loại item không xác định: {item_type}")
+                 return
+
+            # Clean up potential double slashes in URL path part if path was empty
+            url = url.replace(f'/{default_branch}//', f'/{default_branch}/') # If path was ""
+            url = url.replace(f'/{default_branch}/', f'/{default_branch}/') # Normalize just in case
+
+            # Put on clipboard
+            self.root.clipboard_clear()
+            self.root.clipboard_append(url)
+            self.update_status(f"Đã copy link vào clipboard: {url}")
+            print(f"Copied URL: {url}")
+
+        except Exception as e:
+            self.update_status(f"Lỗi khi tạo link GitHub: {e}")
+            messagebox.showerror("Lỗi Copy Link", f"Không thể tạo link GitHub:\n{e}", parent=self.root)
+            print(f"Error generating GitHub link for {item_data}: {e}")
+    # --- END CHANGE: Added copy_github_link_to_clipboard ---
 
     # --- Clipboard & Paste Handlers (Refactored for DnD reuse) ---
 
     def copy_local_items(self):
-        selected_paths = self.get_selected_local_items() # Gets full paths (iids)
+        selected_paths = self.get_selected_local_items() # Already filters '..'
         if selected_paths:
             self.clipboard = {
                 'type': 'local',
@@ -1587,24 +1683,31 @@ class GitHubManagerApp:
             self.update_status("Chưa chọn item cục bộ nào để copy.")
 
     def copy_github_items(self):
-        selected_items_info = self.get_selected_github_items_info() # Gets list of dicts
+        selected_items_info = self.get_selected_github_items_info() # Already filters invalid, includes 'repo' type
         if selected_items_info:
             self.clipboard = {
                 'type': 'remote',
-                'items': selected_items_info
+                # Filter out 'repo' types before adding to clipboard for download/paste actions
+                'items': [item for item in selected_items_info if item['type'] != 'repo']
             }
-            names = [item['name'] for item in selected_items_info]
-            self.update_status(f"Đã copy {len(names)} item GitHub: {', '.join(names[:3])}{'...' if len(names) > 3 else ''}")
+            if not self.clipboard['items']: # If only repos were selected
+                 self.update_status("Chỉ có thể copy (tải xuống) file và thư mục, không phải repo.")
+                 self.clipboard = None
+                 return
+
+            names = [item['name'] for item in self.clipboard['items']]
+            self.update_status(f"Đã copy {len(names)} item GitHub (chuẩn bị tải): {', '.join(names[:3])}{'...' if len(names) > 3 else ''}")
         else:
             self.clipboard = None
-            self.update_status("Chưa chọn item GitHub nào để copy.")
+            self.update_status("Chưa chọn item GitHub nào để copy (tải xuống).")
+
 
     def handle_paste_to_local(self, target_directory):
         """Handles pasting/dropping GitHub items to local. Uses clipboard."""
         if not self.clipboard or self.clipboard.get('type') != 'remote':
             self.update_status("Clipboard không chứa item GitHub hoặc rỗng.")
             return
-        if not os.path.isdir(target_directory):
+        if not target_directory or not os.path.isdir(target_directory):
              messagebox.showerror("Lỗi", f"Thư mục đích không hợp lệ: {target_directory}")
              return
         # Use the shared initiation logic
@@ -1633,16 +1736,19 @@ class GitHubManagerApp:
         github_items_info: list of dicts {repo, path, type, name, sha}
         is_dnd: flag to indicate if triggered by drag-drop
         """
-        if not github_items_info:
-            self.update_status("Không có item GitHub nào được chọn.")
+        # Filter out any potential 'repo' type items that might have slipped through
+        items_to_download = [item for item in github_items_info if item.get('type') != 'repo']
+
+        if not items_to_download:
+            self.update_status("Không có file hoặc thư mục GitHub nào được chọn để tải.")
             return
-        if not os.path.isdir(target_directory):
+        if not target_directory or not os.path.isdir(target_directory):
              messagebox.showerror("Lỗi", f"Thư mục đích không hợp lệ: {target_directory}")
              return
 
         conflicts = []
         items_to_process_final = [] # Store dicts {'info': item_info, 'conflict': bool}
-        for item in github_items_info:
+        for item in items_to_download:
             local_target_path = os.path.join(target_directory, item['name'])
             if os.path.exists(local_target_path):
                 conflicts.append(item['name'])
@@ -1718,14 +1824,13 @@ class GitHubManagerApp:
              messagebox.showerror("Lỗi Kết nối", f"Lỗi khi truy cập repo '{target_repo}':\n{e}")
              return
 
-        # --- START CHANGE: Check if the target repository root is empty ---
+        # Check if the target repository root is empty
         print(f"Checking if repo '{target_repo}' is empty before checking individual files...")
         self.update_status(f"Kiểm tra trạng thái repo '{target_repo}'...")
         try:
             # Use the handler method which returns None on 404 (empty or not found)
             root_contents = self.github_handler.get_repo_contents(target_repo, path="")
             if root_contents is None:
-                # Repo root gives 404, likely empty (or invalid repo name, but that was checked above)
                 is_repo_empty = True
                 print(f"Repo '{target_repo}' appears to be empty. Skipping individual file conflict checks.")
                 self.update_status(f"Repo '{target_repo}' trống, chuẩn bị upload...")
@@ -1733,15 +1838,13 @@ class GitHubManagerApp:
                  print(f"Repo '{target_repo}' is not empty. Proceeding with individual file checks.")
                  self.update_status("Đang kiểm tra file trùng trên GitHub...") # Status for non-empty repo check
         except Exception as e:
-            # Handle potential errors during the initial repo check itself
             messagebox.showerror("Lỗi Kiểm tra Repo", f"Không thể xác định trạng thái repo '{target_repo}':\n{e}")
             checking_failed = True
-            is_repo_empty = False # Assume not empty on error to be safe? Or abort? Let's abort.
-        # --- END CHANGE ---
+            is_repo_empty = False
 
         # Proceed only if initial repo check didn't fail
         if not checking_failed:
-            # --- Loop through local items to check conflicts (only if repo is NOT empty) ---
+            # Loop through local items to check conflicts (only if repo is NOT empty)
             if not is_repo_empty:
                 for item in local_items:
                     local_path = item['path']
@@ -1759,35 +1862,32 @@ class GitHubManagerApp:
                              items_to_upload_final.append({'path': local_path, 'name': item_name, 'conflict': False})
                              print(f"No conflict for: {gh_target_path_full}")
                         except GithubException as e:
-                             # Handle specific 404 within GithubException as "Not Found" silently for this check
                              if e.status == 404:
                                  items_to_upload_final.append({'path': local_path, 'name': item_name, 'conflict': False})
                                  print(f"No conflict for (404 GithubException): {gh_target_path_full}")
                              else:
-                                 # Show error for other GitHub exceptions during check
                                  messagebox.showerror("Lỗi Kiểm tra GitHub", f"Không thể kiểm tra file '{item_name}' trên GitHub:\n{e.status} - {e.data.get('message', '')}")
                                  checking_failed = True; break
                         except Exception as e:
                              messagebox.showerror("Lỗi", f"Lỗi không xác định khi kiểm tra file '{item_name}':\n{e}")
                              checking_failed = True; break
                     elif os.path.isdir(local_path):
-                         # Directories don't need pre-checking here
                          items_to_upload_final.append({'path': local_path, 'name': item_name, 'conflict': False})
                          print(f"Directory queued (no pre-check): {item_name}")
 
-                    if checking_failed: break # Exit loop early if an error occurred
+                    if checking_failed: break
 
             else: # If repo IS empty, assume no conflicts for all items
                 for item in local_items:
                      items_to_upload_final.append({'path': item['path'], 'name': item['name'], 'conflict': False})
 
-        # --- Overwrite Confirmation (only if checks ran and found conflicts) ---
+        # Overwrite Confirmation (only if checks ran and found conflicts)
         if not checking_failed:
-             self.update_status("Kiểm tra hoàn tất.") # Update status before potential dialog
+             self.update_status("Kiểm tra hoàn tất.")
 
              overwrite_confirmed = True
              skip_conflicts = False
-             if conflicts: # Only show dialog if conflicts were actually found (repo wasn't empty)
+             if conflicts: # Only show dialog if conflicts were actually found
                  conflict_list_str = "\n - ".join(conflicts[:5]) + ("\n - ..." if len(conflicts) > 5 else "")
                  result = messagebox.askyesnocancel(
                      "Xác nhận Ghi đè GitHub",
@@ -1807,21 +1907,16 @@ class GitHubManagerApp:
                  else: # No
                      overwrite_confirmed = False
                      skip_conflicts = True
-                     # Filter out conflicting *files* again (harmless if is_repo_empty was true)
                      items_to_upload_final = [item for item in items_to_upload_final if not (os.path.isfile(item['path']) and item['conflict'])]
                      if not items_to_upload_final:
                           self.update_status("Đã hủy upload (không có file mới hoặc thư mục để upload).")
                           return
 
-             # Get the final list of local paths to process
              final_local_paths_list = [item['path'] for item in items_to_upload_final]
              if not final_local_paths_list:
                  self.update_status("Không có item nào để upload.")
                  return
 
-             # Start the upload thread
-             # We always pass overwrite=True if the repo was empty OR if the user chose "Yes"
-             # We pass overwrite=False only if the repo wasn't empty AND the user chose "No"
              effective_overwrite = is_repo_empty or overwrite_confirmed
              self.start_upload_thread(target_repo, target_github_path, final_local_paths_list, overwrite=effective_overwrite)
 
@@ -1831,14 +1926,13 @@ class GitHubManagerApp:
 
     # --- Local Actions ---
     def delete_selected_local_items(self, event=None):
-        selected_paths = self.get_selected_local_items()
+        selected_paths = self.get_selected_local_items() # Already filters '..'
         if not selected_paths:
             self.update_status("Chưa chọn item cục bộ nào để xóa.")
             return
 
         names = [os.path.basename(p) for p in selected_paths]
         confirm_msg = f"Bạn có chắc chắn muốn xóa vĩnh viễn {len(names)} item(s) sau đây khỏi máy tính không?\n\n"
-        # Show first few items clearly
         confirm_msg += "\n - ".join([f"'{name}'" for name in names[:10]])
         if len(names) > 10: confirm_msg += "\n - ..."
         confirm_msg += "\n\nHành động này KHÔNG THỂ hoàn tác và sẽ xóa cả nội dung thư mục!"
@@ -1856,7 +1950,6 @@ class GitHubManagerApp:
                         shutil.rmtree(path)
                         print(f"Deleted directory: {path}")
                     else:
-                        # Should not happen if listed, but handle defensively
                         print(f"Skipping unknown item type: {path}")
                         continue
                     deleted_count += 1
@@ -1866,7 +1959,8 @@ class GitHubManagerApp:
                     errors.append(error_msg)
 
             # Refresh the local tree view after deletion attempts
-            self.populate_local_tree(self.current_local_path)
+            refresh_path = self.current_local_path
+            self.populate_local_tree(refresh_path)
 
             # Report result
             if not errors:
@@ -1876,40 +1970,33 @@ class GitHubManagerApp:
                 self.update_status(f"Xóa hoàn tất với {len(errors)} lỗi.")
 
     def rename_local_item(self):
-        selected_paths = self.get_selected_local_items()
+        selected_paths = self.get_selected_local_items() # Already filters '..'
         if len(selected_paths) != 1: return # Only rename one item
         old_path = selected_paths[0]
         old_name = os.path.basename(old_path)
         directory = os.path.dirname(old_path)
 
-        # Prevent renaming drive roots
         if self.is_drive_root(old_path):
              messagebox.showwarning("Không thể đổi tên", "Không thể đổi tên gốc ổ đĩa/volume.", parent=self.root)
              return
 
-        # Ask for new name
         new_name = simpledialog.askstring("Đổi tên", f"Nhập tên mới cho '{old_name}':", initialvalue=old_name, parent=self.root)
 
-        # Validate new name
         if new_name and new_name != old_name:
             new_path = os.path.join(directory, new_name)
             if os.path.exists(new_path):
                  messagebox.showerror("Lỗi Đổi Tên", f"Tên '{new_name}' đã tồn tại trong thư mục này.", parent=self.root)
                  return
 
-            # Check for invalid characters (basic check)
             invalid_chars = '\\/:*?"<>|' if platform.system() == "Windows" else "/"
             if any(char in invalid_chars for char in new_name):
                  messagebox.showerror("Lỗi Đổi Tên", f"Tên file/thư mục không được chứa các ký tự: {invalid_chars}", parent=self.root)
                  return
 
-            # Attempt rename
             try:
                 os.rename(old_path, new_path)
                 self.update_status(f"Đã đổi tên '{old_name}' thành '{new_name}'.")
-                # Refresh the tree view to show the change
                 self.populate_local_tree(directory)
-                # Try to select the newly renamed item
                 if self.local_tree.exists(new_path):
                      self.local_tree.selection_set(new_path)
                      self.local_tree.focus(new_path)
@@ -1926,26 +2013,26 @@ class GitHubManagerApp:
 
     def create_new_local_folder(self):
         target_directory = self.current_local_path
+        if target_directory is None: # Cannot create folder in "My Computer" view
+             messagebox.showwarning("Hành động không hợp lệ", "Không thể tạo thư mục trong chế độ xem 'Máy tính'.", parent=self.root)
+             return
+
         folder_name = simpledialog.askstring("Tạo Thư mục Mới", "Nhập tên cho thư mục mới:", parent=self.root)
 
         if folder_name: # User entered a name and didn't cancel
             new_folder_path = os.path.join(target_directory, folder_name)
-            # Check for existence
             if os.path.exists(new_folder_path):
                  messagebox.showerror("Lỗi Tạo Thư mục", f"Thư mục '{folder_name}' đã tồn tại.", parent=self.root)
                  return
 
-            # Check for invalid characters
             invalid_chars = '\\/:*?"<>|' if platform.system() == "Windows" else "/"
             if any(char in invalid_chars for char in folder_name):
                  messagebox.showerror("Lỗi Tạo Thư mục", f"Tên thư mục không được chứa các ký tự: {invalid_chars}", parent=self.root)
                  return
 
-            # Attempt creation
             try:
                 os.makedirs(new_folder_path)
                 self.update_status(f"Đã tạo thư mục '{folder_name}'.")
-                # Refresh tree and select the new folder
                 self.populate_local_tree(target_directory)
                 if self.local_tree.exists(new_folder_path):
                      self.local_tree.selection_set(new_folder_path)
@@ -1959,17 +2046,23 @@ class GitHubManagerApp:
 
     # --- GITHUB Actions ---
     def delete_selected_github_items(self, event=None):
-        selected_items = self.get_selected_github_items_info() # List of dicts
-        if not selected_items:
-            self.update_status("Vui lòng chọn item trên GitHub để xóa.")
+        selected_items = self.get_selected_github_items_info() # List of dicts (includes 'repo' type)
+        # Filter out repo items, as they cannot be deleted this way
+        items_to_delete = [item for item in selected_items if item.get('type') != 'repo']
+
+        if not items_to_delete:
+            self.update_status("Vui lòng chọn file hoặc thư mục trên GitHub để xóa.")
             return
 
+        # Assume all items are from the same repo (UI enforces this view)
+        repo_name = items_to_delete[0]['repo']
+
         # Separate files and directories for confirmation message
-        files_to_delete = [item for item in selected_items if item['type'] == 'file']
-        dirs_to_delete = [item for item in selected_items if item['type'] == 'dir']
+        files_to_delete = [item for item in items_to_delete if item['type'] == 'file']
+        dirs_to_delete = [item for item in items_to_delete if item['type'] == 'dir']
 
         # Build confirmation message
-        confirm_msg = f"Bạn có chắc chắn muốn xóa {len(selected_items)} mục sau khỏi GitHub Repo '{selected_items[0]['repo']}' không?\n" # Assumes all from same repo
+        confirm_msg = f"Bạn có chắc chắn muốn xóa {len(items_to_delete)} mục sau khỏi GitHub Repo '{repo_name}' không?\n"
         if files_to_delete:
              confirm_msg += "\n--- FILE ---\n" + "\n".join([f" - '{item['name']}'" for item in files_to_delete[:5]])
              if len(files_to_delete) > 5: confirm_msg += "\n - ..."
@@ -1983,8 +2076,8 @@ class GitHubManagerApp:
         # Ask for confirmation
         if messagebox.askyesno("Xác nhận Xóa GitHub", confirm_msg, icon='warning', parent=self.root):
             delete_count = 0
-            # Start a delete thread for each selected item
-            for item in selected_items:
+            # Start a delete thread for each selected file/directory
+            for item in items_to_delete:
                  self.start_delete_thread(item['repo'], item['path'], item['sha'])
                  delete_count += 1
             self.update_status(f"Đã yêu cầu xóa {delete_count} mục trên GitHub...")
@@ -1993,14 +2086,18 @@ class GitHubManagerApp:
     def download_github_items(self, specific_items=None):
         """Initiates download via context menu or potentially direct call."""
         selected_items = specific_items if specific_items else self.get_selected_github_items_info()
-        if not selected_items:
-            self.update_status("Vui lòng chọn item trên GitHub để tải xuống.")
+        # Filter out 'repo' type items, cannot download a repo directly like this
+        items_to_process = [item for item in selected_items if item.get('type') != 'repo']
+
+        if not items_to_process:
+            self.update_status("Vui lòng chọn file hoặc thư mục trên GitHub để tải xuống.")
             return
 
         # Ask user for target directory
+        initial_dir_guess = self.current_local_path if self.current_local_path else os.path.expanduser("~")
         target_directory = filedialog.askdirectory(
-            title=f"Chọn thư mục lưu cho {len(selected_items)} mục",
-            initialdir=self.current_local_path,
+            title=f"Chọn thư mục lưu cho {len(items_to_process)} mục",
+            initialdir=initial_dir_guess,
             parent=self.root
         )
 
@@ -2009,7 +2106,7 @@ class GitHubManagerApp:
             return
 
         # Use the shared initiation logic (handles overwrite checks)
-        self._initiate_download(target_directory, selected_items)
+        self._initiate_download(target_directory, items_to_process)
 
 
     # --- Drag and Drop Implementation ---
@@ -2026,23 +2123,27 @@ class GitHubManagerApp:
         self.local_tree.bind("<ButtonRelease-1>", self.on_dnd_release)
         self.github_tree.bind("<ButtonRelease-1>", self.on_dnd_release)
 
-        # Optional: Bind leave/enter for visual feedback (e.g., cursor change)
-        # self.local_tree.bind("<Enter>", self.on_dnd_enter)
-        # self.github_tree.bind("<Enter>", self.on_dnd_enter)
-        # self.local_tree.bind("<Leave>", self.on_dnd_leave)
-        # self.github_tree.bind("<Leave>", self.on_dnd_leave)
-
 
     def on_dnd_press(self, event):
         widget = event.widget
-        # Only consider starting a drag if clicking on an actual item row
-        if widget.identify_row(event.y):
+        row_id = widget.identify_row(event.y)
+        # Only start if clicking on a valid item row (and not the '..' item)
+        if row_id and widget.exists(row_id):
+            item_text = widget.item(row_id, 'text')
+            # Prevent dragging '..' or placeholder items
+            if item_text == ".." or row_id.startswith("placeholder_") or row_id.startswith("back_"):
+                print(f"DnD Press: Ignoring non-draggable item: {item_text}")
+                self._dnd_source_widget = None
+                self._dnd_items = None
+                self._dnd_dragging = False
+                return
+
             self._dnd_dragging = False # Not dragging *yet*
             self._dnd_start_x = event.x
             self._dnd_start_y = event.y
             self._dnd_source_widget = widget
             self._dnd_items = None # Clear previous drag data
-            print(f"DnD Press: Source={widget.winfo_class()}, RowID={widget.identify_row(event.y)}")
+            print(f"DnD Press: Source={widget.winfo_class()}, RowID={row_id}")
         else:
             # Clicked on empty space, reset potential drag state
             self._dnd_source_widget = None
@@ -2058,7 +2159,6 @@ class GitHubManagerApp:
 
         # If already dragging, maybe update cursor or provide visual feedback
         if self._dnd_dragging:
-            # Optional: Indicate potential drop target under cursor? Complex.
             return
 
         # --- Check threshold to start the actual drag ---
@@ -2073,7 +2173,7 @@ class GitHubManagerApp:
 
             # --- Get items from the source widget ---
             if self._dnd_source_widget == self.local_tree:
-                selected_paths = self.get_selected_local_items()
+                selected_paths = self.get_selected_local_items() # Filters '..'
                 print(f"DnD Motion: Getting local items: {selected_paths}")
                 if selected_paths:
                     items_list = [{'path': p, 'name': os.path.basename(p)} for p in selected_paths]
@@ -2081,13 +2181,12 @@ class GitHubManagerApp:
                          potential_items = {'type': 'local', 'items': items_list}
 
             elif self._dnd_source_widget == self.github_tree:
-                selected_items_info = self.get_selected_github_items_info()
-                print(f"DnD Motion: Getting GitHub items: {len(selected_items_info)} items")
-                if selected_items_info:
-                    # Filter out 'back' items if they somehow get selected
-                    items_list = [info for info in selected_items_info if not info['id'].startswith('back_')]
-                    if items_list:
-                         potential_items = {'type': 'remote', 'items': items_list}
+                selected_items_info = self.get_selected_github_items_info() # Filters placeholders/back
+                # Filter out 'repo' type items for dragging actions (upload/download)
+                items_list = [info for info in selected_items_info if info['type'] != 'repo']
+                print(f"DnD Motion: Getting GitHub items: {len(items_list)} valid items (files/dirs)")
+                if items_list:
+                    potential_items = {'type': 'remote', 'items': items_list}
 
             # --- Finalize drag start if items were acquired ---
             if potential_items and potential_items['items']:
@@ -2096,12 +2195,8 @@ class GitHubManagerApp:
                 print(f"--- DnD Motion: Drag Confirmed! Type: {self._dnd_items['type']}, Items: {[item['name'] for item in self._dnd_items['items']]} ---")
                 # Optional: Change cursor
                 # self.root.config(cursor="hand2")
-                # self._dnd_source_widget.config(cursor="hand2") # On source widget
             else:
-                # Threshold exceeded but no valid items selected/found.
-                # Abort this drag attempt. Reset source widget to prevent future motion events
-                # for this press/release cycle from trying again.
-                print("--- DnD Motion: Threshold Exceeded, but no items selected/found. Drag NOT started. ---")
+                print("--- DnD Motion: Threshold Exceeded, but no valid draggable items selected/found. Drag NOT started. ---")
                 self._dnd_source_widget = None # <<< Prevent further motion checks for this press
                 self._dnd_dragging = False
                 self._dnd_items = None
@@ -2113,8 +2208,7 @@ class GitHubManagerApp:
         # self.root.config(cursor="")
 
         target_widget = self.root.winfo_containing(event.x_root, event.y_root) # Find widget under cursor
-        # Refine target_widget if it's not one of the trees (e.g., scrollbar, frame)
-        # Traverse up the widget hierarchy to find the parent Treeview if needed
+        # Refine target_widget if it's not one of the trees
         temp_widget = target_widget
         while temp_widget is not None:
              if isinstance(temp_widget, ttk.Treeview):
@@ -2177,17 +2271,16 @@ class GitHubManagerApp:
         self._dnd_dragging = False
         self._dnd_items = None
         self._dnd_source_widget = None
-        # Reset widget cursors if they were changed
-        # self.local_tree.config(cursor="")
-        # self.github_tree.config(cursor="")
+        # Optional: Reset widget cursors if they were changed
 
 
     def _determine_local_drop_target(self, tree_widget, event_y):
         """Determines the target local directory for a drop. Returns (can_drop, target_path)."""
         item_id = tree_widget.identify_row(event_y) # Get iid (path) under cursor
         if item_id and tree_widget.exists(item_id):
+            item_text = tree_widget.item(item_id, 'text')
             # Dropped onto an existing item
-            if os.path.isdir(item_id):
+            if os.path.isdir(item_id) and item_text != "..":
                 # Make sure it's not a link pretending to be a dir for drop target
                 if not os.path.islink(item_id):
                     print(f"Local Drop Target: Directory '{item_id}'")
@@ -2196,13 +2289,17 @@ class GitHubManagerApp:
                     print(f"Local Drop Target: Link '{item_id}' - Invalid")
                     return False, None # Cannot drop onto a link currently
             else:
-                # Dropped onto a file or drive root (cannot drop *into* these)
-                 print(f"Local Drop Target: File/Drive '{item_id}' - Invalid")
+                # Dropped onto a file, drive root, or '..' (cannot drop *into* these)
+                 print(f"Local Drop Target: Invalid item '{item_text}' ({item_id})")
                  return False, None
         else:
-            # Dropped onto empty space - use current directory
-            print(f"Local Drop Target: Empty space, using current dir '{self.current_local_path}'")
-            return True, self.current_local_path
+            # Dropped onto empty space - use current directory (if not 'My Computer')
+            if self.current_local_path is not None:
+                print(f"Local Drop Target: Empty space, using current dir '{self.current_local_path}'")
+                return True, self.current_local_path
+            else:
+                print("Local Drop Target: Empty space in 'My Computer' view - Invalid")
+                return False, None # Cannot drop into 'My Computer' view
 
     def _determine_github_drop_target(self, tree_widget, event_y):
         """Determines the target repo/path for a GitHub drop. Returns (can_drop, repo, path)."""
@@ -2256,21 +2353,21 @@ class GitHubManagerApp:
         thread = threading.Thread(target=self._upload_worker,
                                   args=(task_id, repo_name, github_path, local_paths, overwrite),
                                   daemon=True)
-        # Store task info
         self.upload_tasks[task_id] = {'thread': thread, 'status': 'Bắt đầu...', 'progress': 0, 'type': 'upload', 'repo': repo_name}
-        self.update_status(f"Task {task_id}: Bắt đầu upload {len(local_paths)} item(s) tới '{repo_name}/{github_path}'...", 0)
+        base_display = f"{repo_name}/{github_path}".strip('/') if github_path else repo_name
+        self.update_status(f"Task {task_id}: Bắt đầu upload {len(local_paths)} item(s) tới '{base_display}'...", 0)
         thread.start()
 
     def _upload_worker(self, task_id, repo_name, github_path_base, local_paths_initial, overwrite):
-        total_items_estimated = len(local_paths_initial) # Initial estimate
+        total_items_estimated = 0 # Start at 0, count as we go
         processed_count = 0; success_count = 0; errors = []; skipped_count = 0
 
-        # Use a queue for breadth-first traversal of directories
         upload_queue = queue.Queue()
-        # Each item in queue: (local_full_path, target_github_dir)
+        # Initial population and count
         for local_path in local_paths_initial:
-            # target_github_dir is the *parent* directory on GitHub where the item should go
              upload_queue.put((local_path, github_path_base))
+             if os.path.isfile(local_path): total_items_estimated += 1
+             elif os.path.isdir(local_path): total_items_estimated += 1 # Count dir itself initially
 
         while not upload_queue.empty():
             local_item_path, current_gh_target_dir = upload_queue.get()
@@ -2279,106 +2376,87 @@ class GitHubManagerApp:
             # Determine relative path for display messages
             relative_display_path = item_name
             try:
-                 # Find which initial path this item belongs to
-                 for initial_path in local_paths_initial:
-                      if local_item_path == initial_path: # Top-level item
-                           relative_display_path = item_name
-                           break
-                      elif local_item_path.startswith(os.path.join(initial_path, '')): # Item inside a top-level dir
-                           base_dir = os.path.dirname(initial_path) # Get parent of the initial item
-                           relative_display_path = os.path.relpath(local_item_path, base_dir)
-                           break
-                 else: # If not found (shouldn't happen with queue logic), use item name
-                      relative_display_path = item_name
-            except ValueError:
+                 # Find base directory of the initial drag/paste set
+                 common_base = os.path.commonpath(local_paths_initial)
+                 # If the common path is a directory containing all items, use its parent
+                 if all(local_item_path.startswith(os.path.join(common_base, '')) for local_item_path in local_paths_initial) and os.path.isdir(common_base):
+                      display_base = os.path.dirname(common_base)
+                 else: # Otherwise, use the parent of the first item (less precise but works for single items)
+                      display_base = os.path.dirname(local_paths_initial[0])
+
+                 relative_display_path = os.path.relpath(local_item_path, display_base)
+            except (ValueError, IndexError):
                  relative_display_path = item_name # Fallback
 
-            # Calculate progress (can be inaccurate with directories)
+            # Calculate progress
             current_progress = int((processed_count / total_items_estimated) * 95) if total_items_estimated > 0 else 0
             update_queue.put((task_id, f"Xử lý: {relative_display_path}", current_progress, False, None))
 
             if os.path.isfile(local_item_path):
-                # --- Upload File ---
-                # Progress callback for individual large files (optional, not implemented in handler)
-                def file_progress_callback(p):
-                    file_prog = int((processed_count / total_items_estimated) * 95) + int(p*0.05) # Scale file progress within overall
-                    update_queue.put((task_id, f"Uploading: {relative_display_path} ({p}%)", file_prog, False, None))
-
+                processed_count += 1 # Increment before potential blocking call
+                update_queue.put((task_id, f"Đang upload: {relative_display_path}", current_progress, False, None))
                 success, message = self.github_handler.upload_file(
                     repo_name, local_item_path, current_gh_target_dir,
                     commit_message=f"Upload {relative_display_path} via app",
-                    # progress_callback=file_progress_callback, # Pass if handler supports it
                     overwrite=overwrite
                 )
 
                 if success:
-                    success_count += 1
-                    msg = f"OK: {relative_display_path}"
-                elif message == "exists": # Specifically means file exists and overwrite was False
-                    skipped_count += 1
-                    msg = f"Bỏ qua (trùng): {relative_display_path}"
-                    # Optionally add to errors list if skipping is considered an "issue"
-                    # errors.append(f"Skipped '{relative_display_path}' (exists, overwrite=False)")
-                else: # Other errors (API, permissions, etc.)
+                    success_count += 1; msg = f"OK: {relative_display_path}"
+                elif message == "exists":
+                    skipped_count += 1; msg = f"Bỏ qua (trùng): {relative_display_path}"
+                else:
                     msg = f"LỖI upload {relative_display_path}: {message}"
                     errors.append(f"Upload error '{relative_display_path}': {message}")
 
-                update_queue.put((task_id, msg, current_progress, False, None)) # Update after file attempt
-                processed_count += 1 # Increment processed count for files
-
+                final_file_progress = int((processed_count / total_items_estimated) * 95) if total_items_estimated > 0 else 0
+                update_queue.put((task_id, msg, final_file_progress, False, None))
 
             elif os.path.isdir(local_item_path):
-                # --- Process Directory ---
-                # Construct the corresponding directory path on GitHub
+                processed_count += 1 # Count dir as processed when we start scanning it
                 clean_current_gh_target_dir = current_gh_target_dir.strip('/')
                 new_gh_dir_for_contents = f"{clean_current_gh_target_dir}/{item_name}" if clean_current_gh_target_dir else item_name
 
                 try:
                     sub_items = os.listdir(local_item_path)
                     if not sub_items:
-                        # Handle empty directory - maybe create an empty file marker?
-                        # GitHub doesn't track empty dirs directly. A common practice is a .gitkeep file.
-                        # For simplicity here, we just log and skip adding contents.
-                        # The user might need to create directories manually if needed empty.
                         print(f"Directory is empty, skipping contents: {local_item_path}")
                         update_queue.put((task_id, f"OK (Thư mục rỗng): {relative_display_path}", current_progress, False, None))
+                        success_count += 1 # Count empty dir as success
                     else:
                         update_queue.put((task_id, f"Quét thư mục: {relative_display_path}", current_progress, False, None))
-                        new_items_count = 0
+                        new_items_found_in_dir = 0
                         for sub_item_name in sub_items:
                             sub_local_path = os.path.join(local_item_path, sub_item_name)
-                            # Add sub-item to the queue with the *new* target GitHub directory
                             upload_queue.put((sub_local_path, new_gh_dir_for_contents))
-                            new_items_count += 1
-                        # Update total estimate (crude, doesn't account for nested depth)
-                        total_items_estimated += new_items_count
-                        print(f"Added {new_items_count} items from '{item_name}' to queue. New total estimate: {total_items_estimated}")
+                            # Increment estimate only if it's a file or non-empty dir? More complex. Just count all.
+                            new_items_found_in_dir += 1
+                        total_items_estimated += new_items_found_in_dir # Update total estimate
+                        print(f"Added {new_items_found_in_dir} items from '{item_name}' to queue. New total estimate: {total_items_estimated}")
+                        success_count += 1 # Count the directory itself as a "success" once children are queued
 
                 except PermissionError as e:
                     msg_err = f"LỖI đọc thư mục cục bộ {relative_display_path}: {e}";
                     update_queue.put((task_id, msg_err, current_progress, False, None));
                     errors.append(f"Dir read error '{relative_display_path}': {e}")
-                except Exception as e: # Catch other potential errors reading directory
+                except Exception as e:
                      msg_err = f"LỖI xử lý thư mục {relative_display_path}: {e}";
                      update_queue.put((task_id, msg_err, current_progress, False, None));
                      errors.append(f"Dir processing error '{relative_display_path}': {e}")
 
-                # We don't increment processed_count for the directory itself, only its contents
-                # This makes progress less accurate but simpler.
-
             else: # Skip sockets, links, etc.
+                processed_count += 1 # Count as processed/skipped
                 update_queue.put((task_id, f"Bỏ qua (loại không hỗ trợ): {relative_display_path}", current_progress, False, None));
                 skipped_count += 1
-                processed_count += 1 # Count it as processed/skipped
 
             upload_queue.task_done() # Mark item from queue as processed
 
         # --- Final Report ---
-        final_message = f"Hoàn thành upload tới '{repo_name}/{github_path_base}'. {success_count} thành công."
+        base_display = f"{repo_name}/{github_path_base}".strip('/') if github_path_base else repo_name
+        final_message = f"Hoàn thành upload tới '{base_display}'. {success_count} thành công."
         if skipped_count > 0: final_message += f" {skipped_count} bỏ qua."
         if errors: final_message += f" Có {len(errors)} lỗi."; print(f"--- Task {task_id} Upload Errors ---:\n" + "\n".join(errors) + "\n------------------------------")
 
-        # Request GitHub view refresh for the repo where upload happened
         refresh_data = {'refresh_view': 'github', 'repo': repo_name}
         update_queue.put((task_id, final_message, 100, True, refresh_data))
 
@@ -2391,9 +2469,8 @@ class GitHubManagerApp:
         self.task_id_counter += 1
         task_id = self.task_id_counter
         thread = threading.Thread(target=self._delete_worker, args=(task_id, repo_name, github_path, sha), daemon=True)
-        # Store task info
         self.upload_tasks[task_id] = {'thread': thread, 'status': 'Bắt đầu...', 'progress': 0, 'type': 'delete', 'repo': repo_name}
-        item_name = os.path.basename(github_path) or github_path # Handle deleting repo root files?
+        item_name = os.path.basename(github_path) or github_path
         self.update_status(f"Task {task_id}: Bắt đầu xóa '{item_name}' từ '{repo_name}'...", 0)
         thread.start()
 
@@ -2401,10 +2478,8 @@ class GitHubManagerApp:
         item_name = os.path.basename(github_path) or github_path
         update_queue.put((task_id, f"Đang xóa: {item_name}...", 50, False, None))
 
-        # Call the handler's delete method
         success, result_message = self.github_handler.delete_item(repo_name, github_path, sha)
 
-        # Prepare data for UI update queue
         refresh_data = {'refresh_view': 'github', 'repo': repo_name} if success else None
         update_queue.put((task_id, result_message, 100, True, refresh_data))
 
@@ -2417,13 +2492,12 @@ class GitHubManagerApp:
         self.task_id_counter += 1
         task_id = self.task_id_counter
         thread = threading.Thread(target=self._download_worker, args=(task_id, target_directory, items_to_download, overwrite_all), daemon=True)
-        # Store task info
         self.upload_tasks[task_id] = {'thread': thread, 'status': 'Bắt đầu...', 'progress': 0, 'type': 'download', 'path': target_directory}
         self.update_status(f"Task {task_id}: Bắt đầu tải xuống {len(items_to_download)} item(s) vào '{os.path.basename(target_directory)}'...", 0)
         thread.start()
 
     def _download_worker(self, task_id, target_directory_base, items_to_download_initial, overwrite_all):
-        total_items_estimated = len(items_to_download_initial) # Initial estimate
+        total_items_estimated = 0 # Count as we go
         processed_count = 0; success_count = 0; errors = []; skipped_overwrite = 0
 
         try:
@@ -2432,26 +2506,24 @@ class GitHubManagerApp:
         except Exception as e:
              update_queue.put((task_id, f"Lỗi nghiêm trọng: {e}", 0, True, None)); return
 
-        # Use a queue for breadth-first traversal
         download_queue = queue.Queue()
-        # Each item: (item_info_dict, current_local_target_dir)
+        # Initial population and count
         for item_info in items_to_download_initial:
              download_queue.put((item_info, target_directory_base))
+             total_items_estimated += 1 # Count initial items
 
         while not download_queue.empty():
             item_info, current_local_target_dir = download_queue.get()
             item_name = item_info['name']; item_type = item_info['type']
             repo_name = item_info['repo']; github_path = item_info['path']
 
-            # Construct the full local path for this item
             local_target_path = os.path.join(current_local_target_dir, item_name)
 
             # Determine relative path for display messages
             relative_display_path = item_name
             try:
-                 if os.path.abspath(current_local_target_dir) != os.path.abspath(target_directory_base):
-                     relative_display_path = os.path.relpath(local_target_path, target_directory_base)
-            except ValueError: pass # Fallback to item_name if relpath fails
+                 relative_display_path = os.path.relpath(local_target_path, target_directory_base)
+            except ValueError: pass # Fallback
 
             # Calculate progress
             current_progress = int((processed_count / total_items_estimated) * 95) if total_items_estimated > 0 else 0
@@ -2460,98 +2532,74 @@ class GitHubManagerApp:
             # --- Check for local conflicts ---
             if os.path.exists(local_target_path):
                 if not overwrite_all:
-                    # Skip this item if overwrite is not allowed
                     msg_skip = f"Bỏ qua (trùng): {relative_display_path}";
                     update_queue.put((task_id, msg_skip, current_progress, False, None));
                     skipped_overwrite += 1
-                    # We still need to mark the original item as processed, but don't process children
-                    processed_count += 1 # Increment count for the item we are skipping
+                    processed_count += 1 # Increment count for the skipped item
                     download_queue.task_done(); continue
                 else:
-                    # Overwrite allowed, delete existing local item first
                     update_queue.put((task_id, f"Xóa file cũ: {relative_display_path}", current_progress, False, None))
                     try:
-                         if os.path.isfile(local_target_path) or os.path.islink(local_target_path):
-                             os.remove(local_target_path)
-                         elif os.path.isdir(local_target_path):
-                             shutil.rmtree(local_target_path) # Recursively remove directory
+                         if os.path.isfile(local_target_path) or os.path.islink(local_target_path): os.remove(local_target_path)
+                         elif os.path.isdir(local_target_path): shutil.rmtree(local_target_path)
                          print(f"Removed existing local item: {local_target_path}")
                     except Exception as e:
                          msg_err = f"LỖI xóa file/thư mục cục bộ cũ '{relative_display_path}': {e}"
-                         update_queue.put((task_id, msg_err, current_progress, False, None));
-                         errors.append(msg_err)
-                         # Mark as processed but skip downloading this item and its children if it was a dir
+                         update_queue.put((task_id, msg_err, current_progress, False, None)); errors.append(msg_err)
                          processed_count += 1
                          download_queue.task_done(); continue
 
             # --- Process Download ---
+            processed_count += 1 # Increment count before potential blocking call
             try:
-                # Get repo object (could cache this per repo_name for efficiency)
+                # Get repo object (could cache)
                 repo = user.get_repo(repo_name)
 
                 if item_type == 'file':
                     update_queue.put((task_id, f"Đang tải file: {relative_display_path}...", current_progress, False, None))
-                    # Ensure parent directory exists locally
                     os.makedirs(os.path.dirname(local_target_path), exist_ok=True)
-                    # Get file content from GitHub
                     file_content = repo.get_contents(github_path)
-                    # Write content to local file
                     with open(local_target_path, "wb") as f:
-                        # Content might be base64 encoded string or bytes depending on file size/type
                         if file_content.encoding == "base64" and isinstance(file_content.content, str):
                             import base64
                             f.write(base64.b64decode(file_content.content))
-                        elif file_content.decoded_content: # Use decoded_content if available (PyGithub handles decoding)
+                        elif file_content.decoded_content:
                             f.write(file_content.decoded_content)
                         else:
-                            # Fallback or error if no usable content found
                             raise ValueError(f"Could not get decoded content for {github_path}")
                     success_count += 1
                     msg_done = f"OK: {relative_display_path}";
                     update_queue.put((task_id, msg_done, current_progress, False, None))
-                    processed_count += 1 # Increment count for successfully downloaded file
 
                 elif item_type == 'dir':
                     update_queue.put((task_id, f"Quét thư mục GH: {relative_display_path}...", current_progress, False, None))
-                    # Create the local directory
                     os.makedirs(local_target_path, exist_ok=True)
-                    # Get the contents of the directory from GitHub
                     contents = repo.get_contents(github_path)
                     if contents:
                          update_queue.put((task_id, f"Thêm {len(contents)} mục con từ: {relative_display_path}", current_progress, False, None))
-                         new_items_count = 0
+                         new_items_found_in_dir = 0
                          for content_item in contents:
-                              # Prepare info dict for the sub-item
                               sub_item_info = {
                                   'repo': repo_name, 'path': content_item.path, 'type': content_item.type,
                                   'name': content_item.name, 'sha': content_item.sha
-                                  # Size is implicitly handled if it's a file later
                               }
-                              # Add sub-item to the queue, targetting the new local directory
                               download_queue.put((sub_item_info, local_target_path))
-                              new_items_count += 1
-                         # Update total estimate
-                         total_items_estimated += new_items_count
-                         print(f"Added {new_items_count} sub-items from '{item_name}'. New estimate: {total_items_estimated}")
-                         # We count the directory itself as one success when we start processing its children
-                         success_count += 1
+                              new_items_found_in_dir += 1
+                         total_items_estimated += new_items_found_in_dir # Update total estimate
+                         print(f"Added {new_items_found_in_dir} sub-items from '{item_name}'. New estimate: {total_items_estimated}")
+                         success_count += 1 # Count dir as success when children queued
                     else: # Empty directory on GitHub
                          print(f"Directory '{relative_display_path}' is empty on GitHub.")
                          msg_done = f"OK (Thư mục rỗng): {relative_display_path}";
                          update_queue.put((task_id, msg_done, current_progress, False, None))
-                         success_count += 1 # Count empty dir as success
-
-                    # Increment processed count for the directory itself *after* queuing children
-                    processed_count += 1
+                         success_count += 1
 
             except GithubException as e:
                  msg_err = f"LỖI GitHub tải '{relative_display_path}': {e.status} - {e.data.get('message','(No message)')}"
                  update_queue.put((task_id, msg_err, current_progress, False, None)); errors.append(msg_err)
-                 processed_count += 1 # Count as processed even if error
             except Exception as e:
                  msg_err = f"LỖI tải xuống '{relative_display_path}': {e}"
                  update_queue.put((task_id, msg_err, current_progress, False, None)); errors.append(msg_err)
-                 processed_count += 1 # Count as processed even if error
 
             download_queue.task_done() # Mark item from queue as processed
 
@@ -2567,8 +2615,6 @@ class GitHubManagerApp:
 
 # --- Chạy ứng dụng ---
 if __name__ == "__main__":
-    # Load theme from settings *before* creating the main window
-    # Use a static method concept (calling on class) or a standalone function
     def load_initial_settings():
         try:
             with open(SETTINGS_FILE, 'r') as f:
@@ -2582,23 +2628,18 @@ if __name__ == "__main__":
     initial_settings = load_initial_settings()
     initial_theme = initial_settings.get("theme", DEFAULT_SETTINGS["theme"])
 
-    # Attempt to create window with saved theme, fallback to default
     try:
         root = tb.Window(themename=initial_theme)
     except tk.TclError:
          print(f"Theme '{initial_theme}' not found at startup, using fallback '{DEFAULT_SETTINGS['theme']}'.")
-         initial_theme = DEFAULT_SETTINGS["theme"] # Ensure fallback is used
-         # Update settings dict in case we save later without changing theme
+         initial_theme = DEFAULT_SETTINGS["theme"]
          initial_settings["theme"] = initial_theme
          root = tb.Window(themename=initial_theme)
 
     root.title("GitHub Repository Manager")
     root.minsize(900, 600)
-    # Set initial size
     root.geometry("1200x850")
 
-    # Create and run the app instance
     app = GitHubManagerApp(root)
     root.mainloop()
 
-# --- END OF FILE main1.py ---
