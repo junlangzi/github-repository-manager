@@ -312,45 +312,73 @@ class GitHubHandler:
 class GitHubManagerApp:
 
     def __init__(self, root):
+        """Khởi tạo ứng dụng GitHub Manager."""
         self.root = root
-        print("Initializing GitHubManagerApp...")
+        print("Initializing GitHubManagerApp...") # Debug init start
+
+        # Khởi tạo các thuộc tính cơ bản
         self.previous_settings = {}
-        self.settings = self.load_settings()
+        self.settings = self.load_settings() # Load settings first
         print(f"Settings loaded: {self.settings}")
 
+        # Khởi tạo GitHub Handler dựa trên token từ settings
         print("Initializing GitHubHandler...")
         self.github_handler = GitHubHandler(self.get_token())
-        if self.github_handler.is_authenticated(): print(f"GitHub Handler authenticated as: {self.github_handler.user.login}")
-        else: print("GitHub Handler not authenticated.")
+        if self.github_handler.is_authenticated():
+            print(f"GitHub Handler authenticated as: {self.github_handler.user.login}")
+        else:
+            print("GitHub Handler not authenticated.")
 
         # Khởi tạo đường dẫn cục bộ ban đầu (Ví dụ: Máy tính hoặc Desktop)
+        # Hàm _get_initial_local_path() cần được định nghĩa và gọi get_quick_access_paths()
+        # Đảm bảo get_quick_access_paths() được định nghĩa trước khi gọi _get_initial_local_path()
         self.current_local_path = self._get_initial_local_path()
         print(f"Initial local path: {self.current_local_path}")
 
-        self.clipboard = None # Khởi tạo clipboard
+        self.clipboard = None # Khởi tạo clipboard cho copy/paste context menu
         self.upload_tasks = {}
         self.task_id_counter = 0
         self.current_github_context = {'repo': None, 'path': ""}
 
+        # --- Drag and Drop State (Internal between Trees) ---
+        self._dnd_dragging = False
+        self._dnd_start_x = 0
+        self._dnd_start_y = 0
+        self._dnd_source_widget = None
+        self._dnd_items = None # Dữ liệu đang kéo {'type': 'local'/'remote', 'items': [...]}
+
+        # --- Initialize Style AFTER root exists but BEFORE creating widgets ---
         print("Setting up styles...")
-        self.setup_styles()
+        self.setup_styles() # This will now create the style object and apply theme
 
+        # --- Create widgets using the now available style ---
         print("Creating widgets...")
-        self.create_widgets()
+        self.create_widgets() # Hàm này sẽ tạo self.local_tree và self.github_tree
 
+        # --- Apply settings (theme was already set in setup_styles) ---
+        # Font size and other UI elements are configured here
         print("Applying settings to UI elements...")
+        # force_refresh=True để đảm bảo font và các trạng thái UI được cập nhật đúng ban đầu
         self.apply_settings(force_refresh=True)
 
+        # --- Thiết lập Internal Drag & Drop Bindings ---
+        # Gọi hàm bind DnD sau khi các widget treeview đã được tạo
+        # Đặt ở đây sau create_widgets hoặc dùng root.after như trước đều được
+        self._setup_internal_dnd_bindings()
+
         # --- Populate Initial Views ---
+        # Hiển thị nội dung ban đầu cho cả hai treeview
         print("Populating initial Local tree view...")
         self.populate_local_tree(self.current_local_path)
         print("Populating initial GitHub tree view...")
-        self.populate_github_tree()
+        self.populate_github_tree() # Bắt đầu với danh sách repo
 
+        # Start the queue processor for background tasks
         print("Starting background task queue processor...")
         self.process_queue()
 
         print("--- GitHubManagerApp initialized successfully. ---")
+        # Log trạng thái khởi động vào status log
         self.log_status("Ứng dụng đã sẵn sàng.", "INFO")
         if not self.github_handler.is_authenticated():
             self.log_status("Chưa xác thực GitHub. Vui lòng vào Cài đặt.", "WARNING")
@@ -880,6 +908,207 @@ class GitHubManagerApp:
             else:
                 print("Mục tiêu cục bộ: Khoảng trống trong view 'Máy tính' - Không hợp lệ")
                 return False, None # Không thể paste vào "Máy tính"    
+
+    def _setup_internal_dnd_bindings(self):
+        """Gắn các sự kiện cần thiết cho kéo thả nội bộ."""
+        print("Setting up internal DnD bindings...")
+        try:
+            # Bind vào cả hai treeview
+            widgets_to_bind = []
+            if hasattr(self, 'local_tree') and self.local_tree:
+                widgets_to_bind.append(self.local_tree)
+            if hasattr(self, 'github_tree') and self.github_tree:
+                widgets_to_bind.append(self.github_tree)
+
+            if not widgets_to_bind:
+                 print("Error: Cannot setup DnD bindings - Treeviews not found.")
+                 return
+
+            for widget in widgets_to_bind:
+                print(f"Binding DnD events to {widget.winfo_class()}...")
+                widget.bind("<ButtonPress-1>", self.on_dnd_press, add='+') # add='+' để không ghi đè double-click
+                widget.bind("<B1-Motion>", self.on_dnd_motion, add='+')
+                widget.bind("<ButtonRelease-1>", self.on_dnd_release, add='+')
+            print("Internal DnD bindings set.")
+        except Exception as e:
+            print(f"Error setting up internal DnD bindings: {e}")
+
+    def on_dnd_press(self, event):
+        """Xử lý khi nhấn chuột trái để bắt đầu kéo thả tiềm năng."""
+        widget = event.widget
+        row_id = widget.identify_row(event.y)
+        print(f"\n--- on_dnd_press on {widget.winfo_class()}, row='{row_id}' ---")
+
+        # Kiểm tra xem có click vào item hợp lệ không
+        is_valid_drag_source = False
+        if row_id and widget.exists(row_id):
+            if widget == self.local_tree:
+                # Không kéo thả ".."
+                if self.local_tree.item(row_id, 'text') != "..":
+                    is_valid_drag_source = True
+            elif widget == self.github_tree:
+                # Không kéo thả "back", "placeholder", hoặc có thể cả repo gốc
+                if not item_id.startswith("back|") and not item_id.startswith("placeholder_"):
+                     # Tạm thời cho phép kéo mọi thứ khác, sẽ lọc sau trong on_dnd_motion
+                     is_valid_drag_source = True
+                     # Nếu muốn chặn kéo repo:
+                     # item_type, _ = self.parse_item_id(row_id)
+                     # if item_type != 'repo': is_valid_drag_source = True
+
+        if is_valid_drag_source:
+            print(f"Valid drag source detected: {row_id}")
+            self._dnd_dragging = False # Chưa kéo chính thức
+            self._dnd_start_x = event.x
+            self._dnd_start_y = event.y
+            self._dnd_source_widget = widget
+            self._dnd_items = None # Xóa dữ liệu kéo cũ
+        else:
+            print("Invalid drag source or empty space clicked.")
+            # Reset trạng thái nếu click không hợp lệ
+            self._dnd_source_widget = None
+            self._dnd_items = None
+            self._dnd_dragging = False
+
+
+    def on_dnd_motion(self, event):
+        """Xử lý khi di chuột trong khi nhấn giữ, bắt đầu kéo thả thực sự."""
+        # Chỉ xử lý nếu đã có điểm bắt đầu hợp lệ và chưa kéo
+        if self._dnd_source_widget is None or self._dnd_dragging:
+            return
+
+        # Kiểm tra ngưỡng di chuyển
+        dx = abs(event.x - self._dnd_start_x)
+        dy = abs(event.y - self._dnd_start_y)
+        threshold = 5
+
+        if dx > threshold or dy > threshold:
+            print(f"--- on_dnd_motion: Threshold exceeded (dx={dx}, dy={dy}) ---")
+            drag_data = None
+            source_widget = self._dnd_source_widget
+
+            # Chuẩn bị dữ liệu dựa trên widget nguồn
+            if source_widget == self.local_tree:
+                selected_paths = self.get_selected_local_items() # Lấy các đường dẫn đã chọn
+                print(f"Preparing local items to drag: {selected_paths}")
+                if selected_paths:
+                    items_list = [{'path': p, 'name': os.path.basename(p)} for p in selected_paths]
+                    if items_list:
+                         drag_data = {'type': 'local', 'items': items_list}
+
+            elif source_widget == self.github_tree:
+                selected_items_info = self.get_selected_github_items_info()
+                # Lọc chỉ lấy file và thư mục (không kéo repo)
+                items_list = [info for info in selected_items_info if info['type'] != 'repo']
+                print(f"Preparing remote items to drag: {[item['name'] for item in items_list]}")
+                if items_list:
+                    drag_data = {'type': 'remote', 'items': items_list}
+
+            # Nếu có dữ liệu hợp lệ để kéo
+            if drag_data and drag_data['items']:
+                self._dnd_items = drag_data
+                self._dnd_dragging = True # <<< Chính thức bắt đầu kéo
+                print(f"Drag started! Type: {self._dnd_items['type']}, Items: {[item['name'] for item in self._dnd_items['items']][:5]}...")
+                # Thay đổi con trỏ chuột để báo hiệu đang kéo
+                self.root.config(cursor="hand2") # Hoặc "exchange", "plus", "arrow"
+            else:
+                print("No valid items selected to start drag.")
+                # Ngăn không cho motion xử lý tiếp cho lần nhấn này
+                self._dnd_source_widget = None
+
+
+    def on_dnd_release(self, event):
+        """Xử lý khi thả chuột, hoàn thành hoặc hủy kéo thả."""
+        print(f"\n--- on_dnd_release: Dragging={self._dnd_dragging}, Source={self._dnd_source_widget.winfo_class() if self._dnd_source_widget else 'None'} ---")
+        # Luôn reset con trỏ chuột về mặc định
+        self.root.config(cursor="")
+
+        # Kiểm tra xem có đang trong một phiên kéo thả hợp lệ không
+        if not self._dnd_dragging or not self._dnd_items or not self._dnd_source_widget:
+             print("Release detected, but not a valid drag operation. Cleaning up.")
+             self._dnd_dragging = False
+             self._dnd_items = None
+             self._dnd_source_widget = None
+             return # Không làm gì cả
+
+        # Xác định widget đích dưới con trỏ
+        target_widget = self.root.winfo_containing(event.x_root, event.y_root)
+        # Tìm widget Treeview cha gần nhất nếu click vào scrollbar hoặc phần tử con
+        temp_widget = target_widget
+        actual_target_tree = None
+        while temp_widget is not None:
+             if isinstance(temp_widget, ttk.Treeview):
+                 actual_target_tree = temp_widget
+                 break
+             # Thêm kiểm tra cho Frame chứa Treeview nếu cần
+             # if temp_widget == self.local_tree_frame: actual_target_tree = self.local_tree; break
+             # if temp_widget == self.github_tree_frame: actual_target_tree = self.github_tree; break
+             try: temp_widget = temp_widget.master
+             except: temp_widget = None # Tránh lỗi nếu không có master
+
+        print(f"Target widget under cursor: {target_widget.winfo_class() if target_widget else 'None'}")
+        print(f"Actual target Treeview found: {actual_target_tree.winfo_class() if actual_target_tree else 'None'}")
+
+        source_widget = self._dnd_source_widget
+        dragged_data = self._dnd_items
+
+        # --- Xử lý logic thả ---
+        valid_drop = False
+        # --- Trường hợp 1: Kéo từ Local sang GitHub ---
+        if source_widget == self.local_tree and actual_target_tree == self.github_tree:
+            print("Detected drop: Local -> GitHub Tree")
+            # Xác định vị trí thả cụ thể trên GitHub tree
+            # event.y là tọa độ Y tương đối với widget gốc (source_widget)
+            # Cần lấy tọa độ Y tương đối với target_widget (github_tree)
+            try:
+                # Chuyển đổi tọa độ root sang tọa độ của github_tree
+                target_y_rel = event.y_root - actual_target_tree.winfo_rooty()
+                print(f"Converted Y coordinate relative to GitHub Tree: {target_y_rel}")
+                can_drop, target_repo, target_gh_path = self._determine_github_drop_target(actual_target_tree, target_y_rel)
+                if can_drop:
+                    print(f"Valid GitHub drop target: Repo='{target_repo}', Path='{target_gh_path}'")
+                    self.log_status(f"Thả {len(dragged_data['items'])} mục vào {target_repo}/{target_gh_path}...", "INFO")
+                    # Gọi hàm bắt đầu upload
+                    self._initiate_upload(target_repo, target_gh_path, dragged_data['items'], is_dnd=True)
+                    valid_drop = True
+                else:
+                    self.log_status("Hủy thả: Không thể thả vào vị trí GitHub này.", "WARNING")
+                    print("Invalid GitHub drop target.")
+            except Exception as e:
+                 print(f"Error determining GitHub drop target or initiating upload: {e}")
+                 self.log_status("Lỗi khi xử lý thả vào GitHub.", "ERROR")
+
+        # --- Trường hợp 2: Kéo từ GitHub sang Local ---
+        elif source_widget == self.github_tree and actual_target_tree == self.local_tree:
+            print("Detected drop: GitHub -> Local Tree")
+            try:
+                # Chuyển đổi tọa độ Y tương đối với local_tree
+                target_y_rel = event.y_root - actual_target_tree.winfo_rooty()
+                print(f"Converted Y coordinate relative to Local Tree: {target_y_rel}")
+                can_drop, target_local_dir = self._determine_local_drop_target(actual_target_tree, target_y_rel)
+                if can_drop:
+                    print(f"Valid Local drop target: Dir='{target_local_dir}'")
+                    self.log_status(f"Thả {len(dragged_data['items'])} mục vào {os.path.basename(target_local_dir)}...", "INFO")
+                    # Gọi hàm bắt đầu download
+                    self._initiate_download(target_local_dir, dragged_data['items'], is_dnd=True)
+                    valid_drop = True
+                else:
+                    self.log_status("Hủy thả: Không thể thả vào vị trí cục bộ này.", "WARNING")
+                    print("Invalid Local drop target.")
+            except Exception as e:
+                 print(f"Error determining Local drop target or initiating download: {e}")
+                 self.log_status("Lỗi khi xử lý thả vào máy tính.", "ERROR")
+
+        # --- Trường hợp khác: Thả vào chính nó hoặc widget khác ---
+        else:
+            if source_widget == actual_target_tree: print("Drop ignored (dropped onto source).")
+            else: print(f"Drop ignored (dropped onto invalid target: {actual_target_tree.winfo_class() if actual_target_tree else 'None'}).")
+            # Không cần log trạng thái ở đây vì không có hành động nào
+
+        # --- Dọn dẹp trạng thái kéo thả ---
+        print("Cleaning up drag state.")
+        self._dnd_dragging = False
+        self._dnd_items = None
+        self._dnd_source_widget = None
 
 
     def get_quick_access_paths(self):
